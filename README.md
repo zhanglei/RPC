@@ -4,12 +4,25 @@ swoole结合yaf的rpc
 ## Install
 ### Install Yaf
 ```
+cd yaf
+phpize
+./configure --with-php-config=/path/to/php-config
+make && make install
+```
+
+### Install composer
+```
+ curl -sS https://getcomposer.org/installer | php
  composer install
 ```
 
-## Install yaf
-
-## Install swoole
+### Install swoole
+```
+cd swoole-src
+phpize
+./configure
+make && make install
+```
 
 ##启动用户服务
 ```
@@ -23,7 +36,7 @@ swoole结合yaf的rpc
  php swoole.php
 ```
 
-##客户端调用
+##客户端调试
 ```
  curl http://localhost/swoole_yaf_rpc/client/public/index.php
 ```
