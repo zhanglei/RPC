@@ -1,0 +1,28 @@
+{
+  "name": "rpc/swoole_server",
+  "require": {
+  },
+  "autoload": {
+    "psr-4": {
+      "Protocols\\": "src/Protocols",
+      "Packet\\": "src/Packet",
+      "Swoole\\": "src/Swoole"
+    },
+    "classmap": [
+    ],
+    "files": [
+    ]
+  },
+  "config": {
+    "preferred-install": "dist",
+    "secure-http": false
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true,
+  "repositories": {
+    "packagist": {
+      "type": "composer",
+      "url": "https://packagist.phpcomposer.com"
+    }
+  }
+}
