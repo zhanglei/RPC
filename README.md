@@ -2,18 +2,18 @@
 swoole结合yaf的rpc
 
 ## Install
+### Install composer
+```
+ curl -sS https://getcomposer.org/installer | php
+ composer install
+```
+
 ### Install Yaf
 ```
 cd yaf
 phpize
 ./configure --with-php-config=/path/to/php-config
 make && make install
-```
-
-### Install composer
-```
- curl -sS https://getcomposer.org/installer | php
- composer install
 ```
 
 ### Install swoole
