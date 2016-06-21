@@ -32,7 +32,7 @@ class Format
      * @param $pack
      * @param int $protocol_mode
      * @param bool $protocol        协议头
-     * @return array|bool
+     * @return array
      */
     public static function packDecode($pack, $protocol_mode = 0, $protocol = false)
     {
@@ -42,6 +42,9 @@ class Format
                 break;
             case Protocol::PROTOCOLS_MODE_SERIALIZE :
                 $pack = Serialize::decode($pack, $protocol);
+                break;
+            default:
+                $pack = Json::decode($pack, $protocol);
                 break;
         }
         
@@ -62,6 +65,9 @@ class Format
                 break;
             case Protocol::PROTOCOLS_MODE_SERIALIZE :
                 $data = Serialize::encode($data);
+                break;
+            default:
+                $data = Json::encode($data);
                 break;
         }
 

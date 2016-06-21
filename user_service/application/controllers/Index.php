@@ -5,8 +5,7 @@ class IndexController extends Yaf_Controller_Abstract
 	
    public function userAction()
    {
-       //\Packet\Response::packFormat('userService : userAction');
-       throw new \Exception('aaaa');
+       \Packet\Response::packFormat('userService : userAction');
    }
     
     public function testAction()

@@ -83,11 +83,9 @@ class Server
     {
 
         $processName = sprintf(self::WORK_NAME, $workerId);
-//
-//        //todo Mac 执行不了
-//        //cli_set_process_title($processName);
-//
 
+        //cli_set_process_title($processName);
+        
         /*
          * worker分配yaf
          */
@@ -103,43 +101,44 @@ class Server
 
     public function onReceive(\swoole_server $server, $fd, $from_id, $data)
     {
-        //清除响应Body
-        \Yaf_Registry::get('HTTP_RESPONSE')->clearBody();
-
         //数据格式
         $protocol = substr($data, 4, 4);
         $protocol_mode = unpack('Nprotocol', $protocol)['protocol'];
 
-        $invalid_ip = false;
-        foreach (swoole_get_local_ip() as $ip) {
-            if (in_array($ip, $this->config['server']['licenseip'])) {
-                $invalid_ip = true;
-                break;
-            }
-        }
-
-        //todo 只允许指定的ip访问rpc
-        if (!$invalid_ip) {
-            return $this->responseClient($server, $fd, Format::packFormat('', 'invalid ip', 10001), $protocol_mode);
-        }
-
-        $requestInfo = Format::packDecode($data, $protocol_mode, true);
-
-        if (is_string($requestInfo) && strpos($requestInfo, ':') !== false) {
-            $errorInfo = explode(':', $requestInfo);
-            return $this->responseClient($server, $fd, Format::packFormat('', $errorInfo[1], $errorInfo[0]), $protocol_mode);
-        }
-        
-        $request_uri = $requestInfo['service'] . $requestInfo['url'];
-        $request = new \Yaf_Request_Http($request_uri);
-
-        if (!empty($requestInfo['params'])) {
-            foreach ($requestInfo['params'] as $name => $value) {
-                $request->setParam($name, $value);
-            }
-        }
-
         try {
+            //清除响应Body
+            \Yaf_Registry::get('HTTP_RESPONSE')->clearBody();
+
+            $invalid_ip = true;
+            foreach (swoole_get_local_ip() as $ip) {
+                if (in_array($ip, $this->config['server']['licenseip'])) {
+                    $invalid_ip = false;
+                    break;
+                }
+            }
+
+            //todo 只允许指定的ip访问rpc
+            if ($invalid_ip) {
+                return $this->responseClient($server, $fd, Format::packFormat('', 'invalid ip', 10001), $protocol_mode);
+            }
+
+            $requestInfo = Format::packDecode($data, $protocol_mode, true);
+
+            // 判断数据是否正确
+            if (empty($requestInfo['service']) || empty($requestInfo['url'])) {
+                // 发送数据给客户端，请求包错误
+                return $this->responseClient($server, $fd, Format::packFormat('', PROJECT_NAME . ' : bad request', 10002), $protocol_mode);
+            }
+
+            $request_uri = $requestInfo['service'] . $requestInfo['url'];
+            $request = new \Yaf_Request_Http($request_uri);
+
+            if (!empty($requestInfo['params'])) {
+                foreach ($requestInfo['params'] as $name => $value) {
+                    $request->setParam($name, $value);
+                }
+            }
+
             /*
              * 关闭YAF的异常捕获
              * YAF的异常捕获只能捕获一次  之后的错误  不会触发ErrorController
@@ -153,17 +152,19 @@ class Server
              * 分发请求
              */
             $this->application->bootstrap()->getDispatcher()->dispatch($request);
+
+            $send_data = Format::packFormat(
+                unserialize(\Yaf_Registry::get('HTTP_RESPONSE')->getBody('data')),
+                \Yaf_Registry::get('HTTP_RESPONSE')->getBody('message'),
+                \Yaf_Registry::get('HTTP_RESPONSE')->getBody('code')
+            );
+
+            return $this->responseClient($server, $fd, $send_data, $protocol_mode);
+
         } catch (\Exception $exception) {
-            Response::packFormat('', $exception->getMessage(), $exception->getCode());
+            return $this->responseClient($server, $fd, Format::packFormat('', PROJECT_NAME . ' : ' . $exception->getMessage(), $exception->getCode()), $protocol_mode);
         }
-
-        $send_data = Format::packFormat(
-            unserialize(\Yaf_Registry::get('HTTP_RESPONSE')->getBody('data')),
-            \Yaf_Registry::get('HTTP_RESPONSE')->getBody('message'),
-            \Yaf_Registry::get('HTTP_RESPONSE')->getBody('code')
-        );
-
-        return $this->responseClient($server, $fd, $send_data, $protocol_mode);
+        
     }
 
     /**

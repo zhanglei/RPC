@@ -50,7 +50,7 @@ class Json implements Protocol
         }
 
         if ($len != strlen($result)) {
-            return '10002:packet length invalid';
+            Exception::LengthInvalid();
         }
         
         return json_decode($json, true);

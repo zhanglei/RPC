@@ -2,8 +2,6 @@
 
 namespace Protocols;
 
-use Packet\Format;
-
 class Serialize implements Protocol
 {
     public static $instance;
@@ -53,43 +51,11 @@ class Serialize implements Protocol
         }
 
         if ($len != strlen($result)) {
-            return '10002:packet length invalid';
+            Exception::LengthInvalid();
         }
 
         return unserialize($result);
 
-
-
-//        if (DoraConst::SW_DATASIGEN_FLAG == true) {
-//
-//            $signedcode = substr($str, 4, 4);
-//            $result = substr($str, 8);
-//
-//            //check signed
-//            if (pack("N", crc32($result . DoraConst::SW_DATASIGEN_SALT)) != $signedcode) {
-//                return self::packFormat("Signed check error!", 100010);
-//            }
-//
-//            $len = $len - 4;
-//
-//        } else {
-//            $result = substr($str, 4);
-//        }
-//        if ($len != strlen($result)) {
-//            //结果长度不对
-//            echo "error length...\n";
-//
-//            return self::packFormat("packet length invalid 包长度非法", 100007);
-//        }
-//        //if compress the packet
-//        if (DoraConst::SW_DATACOMPRESS_FLAG == true) {
-//            $result = gzdecode($result);
-//        }
-//        $result = unserialize($result);
-//
-//        return self::packFormat("OK", 0, $result);
-        
-        //return unserialize(trim($json));
     }
 
 }
