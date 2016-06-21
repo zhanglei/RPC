@@ -171,7 +171,7 @@ class Swoole extends Client
                 throw new \Exception($data['message'], $data['code']);
             }
 
-            return $data;
+            return $data['data'];
         }
 
         return null;
@@ -203,6 +203,7 @@ class Swoole extends Client
      */
     protected function _close()
     {
+        $this->currentServer = null;
         $this->client->close();
     }
     

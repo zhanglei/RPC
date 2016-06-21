@@ -153,7 +153,7 @@ class Server
              * 分发请求
              */
             $this->application->bootstrap()->getDispatcher()->dispatch($request);
-        } catch (\Yaf_Exception $exception) {
+        } catch (\Exception $exception) {
             Response::packFormat('', $exception->getMessage(), $exception->getCode());
         }
 
