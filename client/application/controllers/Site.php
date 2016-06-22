@@ -5,12 +5,15 @@ class SiteController extends Yaf_Controller_Abstract
 	
    public function indexAction()
    {
-       $user_info = \Rpc\Swoole::instance()->UserService()->doRequest('/index/user', ['php' => 'hello']);
-       $user_info2 = \Rpc\Swoole::instance()->UserService()->doRequest('/index/test');
+       $user_info = \Rpc\Swoole::instance()->UserService()->asyncRequest('/index/user', ['php' => 'hello']);
+       var_dump($user_info);
 
-       $message_info = \Rpc\Swoole::instance()->MessageService()->doRequest('/index/message/');
-       $message_info2 = \Rpc\Swoole::instance()->MessageService()->doRequest('/index/test/');
-       var_dump($user_info, $user_info2, $message_info, $message_info2);
+       $message_info = \Rpc\Swoole::instance()->MessageService()->syncRequest('/index/message/');
+       var_dump($message_info);
+
+
+       var_dump(\Rpc\Swoole::instance()->getAsyncData());
+
    }
     
 }

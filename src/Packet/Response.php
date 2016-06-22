@@ -13,9 +13,7 @@ class Response
      */
     public static function packFormat($data = [], $message = 'success', $code = 0)
     {
-        \Yaf_Registry::get('HTTP_RESPONSE')->setBody(serialize($data), 'data');
-        \Yaf_Registry::get('HTTP_RESPONSE')->setBody($message, 'message');
-        \Yaf_Registry::get('HTTP_RESPONSE')->setBody($code, 'code');
+        \Yaf_Registry::get('HTTP_RESPONSE')->setBody(serialize($data))->setBody($message, 'message')->setBody($code, 'code');
     }
 
 }

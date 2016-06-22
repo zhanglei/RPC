@@ -20,5 +20,10 @@ class RpcException extends \Exception
     {
         throw new self('无效服务', 10003);
     }
+    
+    public static function reciveFailed($server)
+    {
+        throw new self($server . ' : recive wrong or timeout', 10004);
+    }
 
 }

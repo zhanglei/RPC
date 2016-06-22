@@ -2,22 +2,27 @@
 
 namespace Rpc;
 
+use Packet\Format;
+
 class Swoole extends Client
 {
-    /**
+    /*
      * @var Swoole
      */
     private static $instances;
 
-    private $client;
-
+    /*
+     * @var array
+     */
     private $config;
 
-    private $serverGroup = [];
+    /*
+     * 异步请求唯一标示
+     * @var string
+     */
+    private $guid;
 
-    private $currentServer;
-
-    /**
+    /*
      * 协议
      * @var string
      */
@@ -26,13 +31,21 @@ class Swoole extends Client
     private function __construct()
     {
         $this->config = (new \Yaf_Config_Ini(PROJECT_ROOT . DS . 'config/client.ini', ENVIRON))->toArray();
+        $common_config = isset($this->config['swoole']) ? $this->config['swoole'] : [];
 
-        $this->client = new \swoole_client(SWOOLE_SOCK_TCP, SWOOLE_SOCK_SYNC);
-        if (isset($this->config['swoole'])) {
-            $this->client->set($this->config['swoole']);
+        foreach ($this->config['servicegroup'] as $service => $config) {
+            $client = new \swoole_client(SWOOLE_TCP | SWOOLE_KEEP);
+            $group_config = isset($config['swoole']) ? $config['swoole'] : [];
+            $sw_config = array_merge($common_config, $group_config);
+
+            if (!empty($sw_config)) {
+                $client->set($sw_config);
+            }
+
+            self::$client[ucfirst($service)] = $client;
         }
         
-        $this->serverGroup = $this->config['servergroup'];
+        $this->servicegroup = $this->config['servicegroup'];
         
         $protocol = 'Protocols\\' . ucfirst($this->config['protocol']);
         $this->protocol = new $protocol;
@@ -56,10 +69,10 @@ class Swoole extends Client
      */
     public function UserService()
     {
-        $this->currentServer = [
+        $this->currentService = [
             'name'  => 'User',
-            'ip'    => $this->serverGroup['user']['ip'],
-            'port'  => $this->serverGroup['user']['port']
+            'ip'    => $this->servicegroup['user']['ip'],
+            'port'  => $this->servicegroup['user']['port']
         ];
 
         return $this;
@@ -67,135 +80,192 @@ class Swoole extends Client
 
     public function MessageService()
     {
-        $this->currentServer = [
+        $this->currentService = [
             'name'  => 'Message',
-            'ip'    => $this->serverGroup['message']['ip'],
-            'port'  => $this->serverGroup['message']['port']
+            'ip'    => $this->servicegroup['message']['ip'],
+            'port'  => $this->servicegroup['message']['port']
         ];
 
         return $this;
     }
 
     /**
-     * 指定服务
-     * @param $name
-     * @return $this
-     * @throws RpcException
+     * 同步请求
+     * @param $url
+     * @param array $params
+     * @return string|array
+     * @throws \Exception
      */
-    public function setService($name)
+    public function syncRequest($url, $params = [])
     {
-        if (!isset($this->serverGroup[$name])) {
+        $service = $this->currentService['name'];
+
+        if (empty($this->currentService) || !isset(self::$client[$service])) {
+            RpcException::invalidServices();
+        }
+        
+        $send_data = $this->protocol->encode(
+            [
+                'service'   => $service,
+                'url'       => $url,
+                'params'    => $params,
+                'type'      => self::SYNC_MODE
+            ],
+            true
+        );
+
+        $this->_send($send_data);
+
+        return $this->_recv();
+    }
+
+    /**
+     * 异步请求  返回guid
+     * @param $url
+     * @param $params
+     * @return string
+     * @throws RpcException
+     * @throws \Exception
+     */
+    public function asyncRequest($url, $params = [])
+    {
+        $service = $this->currentService['name'];
+
+        if (empty($this->currentService) || !isset(self::$client[$service])) {
             RpcException::invalidServices();
         }
 
-        $this->currentServer = [
-            'name'  => ucfirst($name),
-            'ip'    => $this->serverGroup[$name]['ip'],
-            'port'  => $this->serverGroup[$name]['port']
-        ];
+        $this->guid = $this->_generateGuid();
         
-        return $this;
-    }
-    
-    public function doRequest($url, $params = [])
-    {
         $send_data = $this->protocol->encode(
             [
-                'service'   => $this->currentServer['name'],
+                'service'   => $this->currentService['name'],
                 'url'       => $url,
-                'params'    => $params
+                'params'    => $params,
+                'type'      => self::ASYNC_MODE,
+                'guid'      => $this->guid
             ],
             true
         );
+
+        self::$asynclist[$this->guid]['obj'] = self::$client[$service];
+        self::$asynclist[$this->guid]['service'] = $service;
         
-        //同步发送接收
         $this->_send($send_data);
 
         return $this->_recv();
     }
 
     /**
-     * rpc调用
-     * @param $method
-     * @param $arguments
-     * @return mixed
+     * 获取异步结果
+     * @return array
      */
-    public function __call($method, $arguments)
+    public function getAsyncData()
     {
-        $send_data = $this->protocol->encode(
-            [
-                'service'   => $this->currentServer['name'],
-                'method'    => $method,
-                'params'    => $arguments
-            ],
-            true
-        );
-        
-        //同步发送接收
-        $this->_send($send_data);
-        
-        return $this->_recv();
+        while (true) {
+            if (count(self::$asynclist) > 0) {
+                foreach (self::$asynclist as $guid => $value) {
+                    $client = $value['obj'];
+                    if ($client->isConnected()) {
+                        $result = $client->recv();
+                        
+                        if (!empty($result)) {
+                            $data = $this->protocol->decode($result);
+
+                            if (isset(self::$asynclist[$data['data']['guid']])) {
+                                
+                                if ($data['code'] == 0) {
+                                    self::$asynresult[$guid] = $data['data'];
+                                } else {
+                                    self::$asynresult[$guid] = Format::packFormat('', $data['message'], $data['code']);
+                                }
+                                
+                                unset(self::$asynclist[$guid]);
+                                continue;
+                            } else {
+                                continue;
+                            }
+                        } else {
+                            self::$asynresult[$guid] = Format::packFormat('', $client['_service'] . 'Service_' . $guid . ' : recive wrong or timeout', 10005);
+                            unset(self::$asynclist[$guid]);
+                            continue;
+                        }
+                    } else {
+                        self::$asynresult[$guid] = Format::packFormat('', $client['_service'] . 'Service_' . $guid . ' : client closed', 10006);
+                        unset(self::$asynclist[$guid]);
+                        continue;
+                    }
+                }
+            } else {
+                break;
+            }
+        }
+
+        return self::$asynresult;
     }
 
     /**
      * 发送数据给服务端
      * @param $send_data
-     * @return bool
+     * @return int
+     * @throws \Exception
      */
     protected function _send($send_data)
     {
-        $this->_connect();
-
-        return $this->client->send($send_data);
+        $client = $this->_connect();
+        $res = $client->send($send_data);
+        
+        if (!$res) {
+            $errCode = $client->errCode;
+            throw new \Exception(socket_strerror($errCode), $errCode);
+        }
+        
+        return $res;
     }
 
     /**
-     * 获取服务端返回的数据
-     * @return null
+     * 获取服务端返回数据
+     * @return string|array
+     * @throws RpcException
      * @throws \Exception
      */
     protected function _recv()
     {
-        $res = $this->client->recv();
+        $service = $this->currentService['name'];
+        $result = self::$client[$service]->recv();
         $this->_close();
 
-        if ($res) {
-            $data = $this->protocol->decode($res);
-
-            if (is_string($data) && strpos($data, ':') !== false) {
-                $errorInfo = explode(':', $data);
-                throw new \Exception($errorInfo[1], $errorInfo[0]);
-            }
+        if ($result) {
+            $data = $this->protocol->decode($result);
 
             if ($data['code'] != 0) {
                 throw new \Exception($data['message'], $data['code']);
             }
 
             return $data['data'];
+        } else {
+            RpcException::reciveFailed($service);
         }
-
-        return null;
     }
 
     /**
-     * 链接服务端
+     * 连接服务端
+     * @return \swoole_client
      * @throws RpcException
      */
     protected function _connect()
     {
-        if (empty($this->currentServer)) {
+        if (empty($this->currentService) || !isset(self::$client[$this->currentService['name']])) {
             RpcException::invalidServices();
         }
 
-//        try {
-//            $this->swoole->connect($this->currentServer['ip'], $this->currentServer['port'], $this->timeout);
-//        } catch (\Exception $exception) {
-//            var_dump($exception);
-//        }
-        
-        if (!$this->client->connect($this->currentServer['ip'], $this->currentServer['port'], $this->timeout)) {
-            RpcException::connectFailed("swoole connect failed. Error: {$this->client->errCode}\n");
+        $client = self::$client[$this->currentService['name']];
+
+        if (!$client->connect($this->currentService['ip'], $this->currentService['port'], $this->timeout)) {
+            RpcException::connectFailed("swoole connect failed. Error: {$client->errCode}\n");
         }
+
+        return $client;
     }
 
     /**
@@ -203,8 +273,21 @@ class Swoole extends Client
      */
     protected function _close()
     {
-        $this->currentServer = null;
-        $this->client->close();
+        $this->currentService = null;
+        //$this->client->close();
+    }
+
+    /**
+     * @return string
+     */
+    private function _generateGuid()
+    {
+        while (true) {
+            $guid = md5(microtime(true) . mt_rand(1, 1000000));
+            if (!isset(self::$asynclist[$guid])) {
+                return $guid;
+            }
+        }
     }
     
 }

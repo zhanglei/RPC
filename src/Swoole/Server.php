@@ -25,10 +25,22 @@ class Server
      */
     private $application;
 
+    private $taskInfo = [];
+
     /*
      * 进程名称
      */
     const WORK_NAME = 'swoole-worker-%d';
+    
+    /*
+     * 同步模式
+     */
+    const SYNC_MODE = 1;
+    
+    /*
+     * 异步模式
+     */
+    const ASYNC_MODE = 2;
 
     private function __construct()
     {
@@ -54,6 +66,8 @@ class Server
         $this->server->on('workerstart', [$this, 'onWorkerStart']);
         $this->server->on('close', [$this, 'onClose']);
         $this->server->on('receive', [$this, 'onReceive']);
+        $this->server->on('task', [$this, 'onTask']);
+        $this->server->on('finish', [$this, 'onFinish']);
 
         $this->server->start();
     }
@@ -81,90 +95,187 @@ class Server
 
     public function onWorkerStart(\swoole_server $server, $workerId)
     {
+        if (!$this->application instanceof \Yaf_Application) {
+            $this->application = new \Yaf_Application(PROJECT_ROOT . DS . 'config/application.ini');
+            $this->application->getDispatcher()->getRouter()->addConfig(
+                (new \Yaf_Config_Ini(PROJECT_ROOT . '/config/routes.ini', ENVIRON))->get('routes')
+            );
 
-        $processName = sprintf(self::WORK_NAME, $workerId);
+            //注册响应
+            \Yaf_Registry::set('HTTP_RESPONSE', (new \Yaf_Response_Http()));
+        }
 
-        //cli_set_process_title($processName);
-        
-        /*
-         * worker分配yaf
-         */
-        $this->application = new \Yaf_Application(PROJECT_ROOT . DS . 'config/application.ini', $processName);
-        $this->application->getDispatcher()->getRouter()->addConfig(
-            (new \Yaf_Config_Ini(PROJECT_ROOT . '/config/routes.ini', ENVIRON))->get('routes')
-        );
-
-        //注册响应
-        \Yaf_Registry::set('HTTP_RESPONSE', (new \Yaf_Response_Http()));
-
+//        $istask = $server->taskworker;
+//
+//        if (!$istask) {
+//            $processName = sprintf(self::WORK_NAME, $workerId);
+//
+//            //cli_set_process_title($processName);
+//
+//            /*
+//             * worker分配yaf
+//             */
+//            $this->application = new \Yaf_Application(PROJECT_ROOT . DS . 'config/application.ini', $processName);
+//            $this->application->getDispatcher()->getRouter()->addConfig(
+//                (new \Yaf_Config_Ini(PROJECT_ROOT . '/config/routes.ini', ENVIRON))->get('routes')
+//            );
+//
+//            //注册响应
+//            \Yaf_Registry::set('HTTP_RESPONSE', (new \Yaf_Response_Http()));
+//        }
     }
 
     public function onReceive(\swoole_server $server, $fd, $from_id, $data)
     {
+        //清除响应Body
+        \Yaf_Registry::get('HTTP_RESPONSE')->clearBody();
+
         //数据格式
         $protocol = substr($data, 4, 4);
         $protocol_mode = unpack('Nprotocol', $protocol)['protocol'];
 
+        $requestInfo = Format::packDecode($data, $protocol_mode, true);
+        
         try {
-            //清除响应Body
-            \Yaf_Registry::get('HTTP_RESPONSE')->clearBody();
-
-            $invalid_ip = true;
-            foreach (swoole_get_local_ip() as $ip) {
-                if (in_array($ip, $this->config['server']['licenseip'])) {
-                    $invalid_ip = false;
-                    break;
-                }
-            }
-
-            //todo 只允许指定的ip访问rpc
-            if ($invalid_ip) {
-                return $this->responseClient($server, $fd, Format::packFormat('', 'invalid ip', 10001), $protocol_mode);
-            }
-
-            $requestInfo = Format::packDecode($data, $protocol_mode, true);
 
             // 判断数据是否正确
-            if (empty($requestInfo['service']) || empty($requestInfo['url'])) {
+            if (empty($requestInfo['service']) || empty($requestInfo['url']) || empty($requestInfo['type'])) {
                 // 发送数据给客户端，请求包错误
-                return $this->responseClient($server, $fd, Format::packFormat('', PROJECT_NAME . ' : bad request', 10002), $protocol_mode);
+                return $this->responseClient($server, $fd, Format::packFormat('', PROJECT_NAME . ' : bad request', 10001), $protocol_mode);
             }
 
-            $request_uri = $requestInfo['service'] . $requestInfo['url'];
-            $request = new \Yaf_Request_Http($request_uri);
+            switch ($requestInfo['type']) {
+                case self::SYNC_MODE :
+                    //分发请求
+                    $this->dispatchRequest($requestInfo);
 
-            if (!empty($requestInfo['params'])) {
-                foreach ($requestInfo['params'] as $name => $value) {
-                    $request->setParam($name, $value);
-                }
+                    $send_data = Format::packFormat(
+                        unserialize(\Yaf_Registry::get('HTTP_RESPONSE')->getBody()),
+                        \Yaf_Registry::get('HTTP_RESPONSE')->getBody('message'),
+                        \Yaf_Registry::get('HTTP_RESPONSE')->getBody('code')
+                    );
+
+                    return $this->responseClient($server, $fd, $send_data, $protocol_mode);
+
+                    break;
+                case self::ASYNC_MODE :
+                    $this->doTask($server, $fd, $from_id, $requestInfo, $protocol_mode);
+
+                    return true;
+                    break;
             }
-
-            /*
-             * 关闭YAF的异常捕获
-             * YAF的异常捕获只能捕获一次  之后的错误  不会触发ErrorController
-             */
-            $this->application->getDispatcher()->catchException(false);
-            /*
-             * 关闭自动输出给请求端
-             */
-            $this->application->getDispatcher()->returnResponse(true);
-            /*
-             * 分发请求
-             */
-            $this->application->bootstrap()->getDispatcher()->dispatch($request);
-
-            $send_data = Format::packFormat(
-                unserialize(\Yaf_Registry::get('HTTP_RESPONSE')->getBody('data')),
-                \Yaf_Registry::get('HTTP_RESPONSE')->getBody('message'),
-                \Yaf_Registry::get('HTTP_RESPONSE')->getBody('code')
-            );
-
-            return $this->responseClient($server, $fd, $send_data, $protocol_mode);
 
         } catch (\Exception $exception) {
             return $this->responseClient($server, $fd, Format::packFormat('', PROJECT_NAME . ' : ' . $exception->getMessage(), $exception->getCode()), $protocol_mode);
         }
         
+    }
+
+    public function onTask(\swoole_server $server, $task_id, $from_id, $data)
+    {
+        //清除响应Body
+        \Yaf_Registry::get('HTTP_RESPONSE')->clearBody();
+
+        try {
+            //分发请求
+            $this->dispatchRequest($data);
+
+            $send_data = Format::packFormat(
+                unserialize(\Yaf_Registry::get('HTTP_RESPONSE')->getBody()),
+                \Yaf_Registry::get('HTTP_RESPONSE')->getBody('message'),
+                \Yaf_Registry::get('HTTP_RESPONSE')->getBody('code')
+            );
+        } catch (\Exception $exception) {
+            $send_data = Format::packFormat(
+                '',
+                PROJECT_NAME . '_' . $data['guid'] . ':' . $exception->getMessage(),
+                $exception->getCode()
+            );
+        }
+
+        $send_data['fd'] = $data['fd'];
+        $send_data['guid'] = $data['guid'];
+        $send_data['protocol'] = $data['protocol'];
+
+        return $send_data;
+    }
+
+    public function onFinish(\swoole_server $server, $task_id, $data)
+    {
+        $fd = $data['fd'];
+        $guid = $data['guid'];
+
+        if (!isset($this->taskInfo[$fd][$guid])) {
+            return true;
+        }
+
+        unset($this->taskInfo[$fd][$guid]);
+
+        $send_data = [
+            'code'      => $data['code'],
+            'message'   => $data['message'],
+            'data'      => [
+                'guid'  => $data['guid'],
+                'data'  => $data['data']
+            ]
+        ];
+
+        return $this->responseClient($server, $fd, $send_data, $data['protocol']);
+    }
+    
+    private function doTask(\swoole_server $server, $fd, $from_id, $requestInfo, $protocol_mode)
+    {
+        $this->taskInfo[$fd][$requestInfo['guid']] = true;
+
+        $task = [
+            'guid'      => $requestInfo['guid'],
+            'fd'        => $fd,
+            'service'   => $requestInfo['service'],
+            'url'       => $requestInfo['url'],
+            'params'    => $requestInfo['params'],
+            'protocol'  => $protocol_mode
+        ];
+
+        $server->task($task);
+        $this->responseClient($server, $fd, Format::packFormat($requestInfo['guid'], PROJECT_NAME . ' : task success'), $protocol_mode);
+    }
+
+    /**
+     * YAF分发请求
+     * @param $data
+     */
+    private function dispatchRequest($data)
+    {
+        $request_uri = $data['service'] . $data['url'];
+        $request = new \Yaf_Request_Http($request_uri);
+
+        if (!empty($data['params'])) {
+            foreach ($data['params'] as $name => $value) {
+                $request->setParam($name, $value);
+            }
+        }
+
+        /*
+         * 关闭YAF的异常捕获
+         * YAF的异常捕获只能捕获一次  之后的错误  不会触发ErrorController
+         */
+        $this->application->getDispatcher()->catchException(false);
+        /*
+         * 关闭自动输出给请求端
+         */
+        $this->application->getDispatcher()->returnResponse(true);
+        /*
+         * 分发请求
+         */
+        $this->application->bootstrap()->getDispatcher()->dispatch($request);
+
+//        $send_data = Format::packFormat(
+//            unserialize(\Yaf_Registry::get('HTTP_RESPONSE')->getBody('data')),
+//            \Yaf_Registry::get('HTTP_RESPONSE')->getBody('message'),
+//            \Yaf_Registry::get('HTTP_RESPONSE')->getBody('code')
+//        );
+//
+//        return $this->responseClient($server, $fd, $send_data, $protocol_mode);
     }
 
     /**
