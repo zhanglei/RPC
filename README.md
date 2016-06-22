@@ -1,6 +1,7 @@
 ## swoole_yaf_rpc
-> * swoole结合yaf的rpc  可部署多个端口作为不同服务
+swoole结合yaf的rpc  可部署多个端口作为不同服务
 
+----------
 ##环境依赖
 > * Swoole 1.8.x+
 > * PHP 5.4+
@@ -29,6 +30,8 @@ phpize
 ./configure
 make && make install
 ```
+----------
+
 #快速开始
 ```
  composer install
