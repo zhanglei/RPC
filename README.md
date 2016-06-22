@@ -1,4 +1,4 @@
-## swoole_yaf_rpc(#swoole_yaf_rpc)
+## swoole_yaf_rpc
 > * swoole结合yaf的rpc  可部署多个端口作为不同服务
 
 ##环境依赖
@@ -55,8 +55,8 @@ make && make install
 
 ###客户端(Client)
 
-0 syncRequest 同步下发任务阻塞等待结果返回
-1 asyncRequest 异步下发任务，成功返回guid(异步任务唯一标示)，可以在后续调用getAsyncData 获取所有下发的异步结果
+0. syncRequest 同步下发任务阻塞等待结果返回
+1. asyncRequest 异步下发任务，成功返回guid(异步任务唯一标示)，可以在后续调用getAsyncData 获取所有下发的异步结果
 
 ```
  $user_info = \Rpc\Swoole::instance()->UserService()->asyncRequest('/index/user', ['php' => 'hello']);
