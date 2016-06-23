@@ -208,7 +208,7 @@ class Server
             );
 
             //注册响应
-            \Yaf_Registry::set('HTTP_RESPONSE', (new \Yaf_Response_Http()));
+            //\Yaf_Registry::set('HTTP_RESPONSE', (new \Yaf_Response_Http()));
         }
 
 //        $istask = $server->taskworker;
@@ -233,70 +233,71 @@ class Server
 
     public function onReceive(\swoole_server $server, $fd, $from_id, $data)
     {
-        //清除响应Body
-        \Yaf_Registry::get('HTTP_RESPONSE')->clearBody();
-
         //数据格式
         $protocol = substr($data, 4, 4);
         $protocol_mode = unpack('Nprotocol', $protocol)['protocol'];
 
         $requestInfo = Format::packDecode($data, $protocol_mode, true);
-        
+
+        // 判断数据是否正确
+        if (empty($requestInfo['service']) || empty($requestInfo['url']) || empty($requestInfo['type'])) {
+            // 发送数据给客户端，请求包错误
+            return $this->responseClient($server, $fd, Format::packFormat('', PROJECT_NAME . ' : bad request', 10001), $protocol_mode);
+        }
+
+        ob_start();
+
         try {
-
-            // 判断数据是否正确
-            if (empty($requestInfo['service']) || empty($requestInfo['url']) || empty($requestInfo['type'])) {
-                // 发送数据给客户端，请求包错误
-                return $this->responseClient($server, $fd, Format::packFormat('', PROJECT_NAME . ' : bad request', 10001), $protocol_mode);
-            }
-
             switch ($requestInfo['type']) {
                 case self::SYNC_MODE :
                     //分发请求
                     $this->dispatchRequest($requestInfo);
-
-                    $send_data = Format::packFormat(
-                        unserialize(\Yaf_Registry::get('HTTP_RESPONSE')->getBody()),
-                        \Yaf_Registry::get('HTTP_RESPONSE')->getBody('message'),
-                        \Yaf_Registry::get('HTTP_RESPONSE')->getBody('code')
-                    );
-
-                    return $this->responseClient($server, $fd, $send_data, $protocol_mode);
-
                     break;
                 case self::ASYNC_MODE :
                     $this->doTask($server, $fd, $from_id, $requestInfo, $protocol_mode);
 
-                    return true;
+                    //return true;
                     break;
             }
-
-        } catch (\Exception $exception) {
-            return $this->responseClient($server, $fd, Format::packFormat('', PROJECT_NAME . ' : ' . $exception->getMessage(), $exception->getCode()), $protocol_mode);
+        } catch (\Exception $e) {
+            $exception = $e;
         }
+
+        $result = ob_get_contents();
+
+        ob_end_clean();
+
+        if (isset($exception) && $exception instanceof \Exception) {
+            $send_data = Format::packFormat('', PROJECT_NAME . ' : ' . $exception->getMessage(), $exception->getCode());
+        } else {
+            $result = unserialize($result);
+            $send_data = Format::packFormat($result['data'], $result['message'], $result['code']);
+        }
+
+        return $this->responseClient($server, $fd, $send_data, $protocol_mode);
         
     }
 
     public function onTask(\swoole_server $server, $task_id, $from_id, $data)
     {
-        //清除响应Body
-        \Yaf_Registry::get('HTTP_RESPONSE')->clearBody();
+        ob_start();
 
         try {
             //分发请求
             $this->dispatchRequest($data);
+        } catch (\Exception $e) {
+            $exception = $e;
+        }
 
-            $send_data = Format::packFormat(
-                unserialize(\Yaf_Registry::get('HTTP_RESPONSE')->getBody()),
-                \Yaf_Registry::get('HTTP_RESPONSE')->getBody('message'),
-                \Yaf_Registry::get('HTTP_RESPONSE')->getBody('code')
-            );
-        } catch (\Exception $exception) {
-            $send_data = Format::packFormat(
-                '',
-                PROJECT_NAME . '_' . $data['guid'] . ':' . $exception->getMessage(),
-                $exception->getCode()
-            );
+        $result = ob_get_contents();
+
+        ob_end_clean();
+
+        if (isset($exception) && $exception instanceof \Exception) {
+            $send_data = Format::packFormat('', PROJECT_NAME . '_' . $data['guid'] . ':' . $exception->getMessage(), $exception->getCode());
+        } else {
+            $result = unserialize($result);
+            $send_data = Format::packFormat($result['data'], $result['message'], $result['code']);
         }
 
         $send_data['fd'] = $data['fd'];
@@ -358,7 +359,7 @@ class Server
         ];
 
         $server->task($task);
-        $this->responseClient($server, $fd, Format::packFormat($requestInfo['guid'], PROJECT_NAME . ' : task success'), $protocol_mode);
+        echo serialize(Format::packFormat($requestInfo['guid'], PROJECT_NAME . ' : task success'));
     }
 
     /**
@@ -367,6 +368,7 @@ class Server
      */
     private function dispatchRequest($data)
     {
+
         $request_uri = $data['service'] . $data['url'];
         $request = new \Yaf_Request_Http($request_uri);
 
