@@ -36,9 +36,9 @@ make && make install
 ```
  composer install
 ```
-##运行服务
+##运行服务指令
 ```
- php swoole.php start | stop | reload | restart | help
+ start | stop | reload | restart | help
 ```
 
 ###运行用户服务
