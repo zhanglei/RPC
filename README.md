@@ -36,17 +36,21 @@ make && make install
 ```
  composer install
 ```
+##运行服务
+```
+ php swoole.php start | stop | reload | restart | help
+```
 
-###启动用户服务
+###运行用户服务
 ```
  cd swoole_yaf_rpc/user_service/server
- php swoole.php
+ php swoole.php start
 ```
 
-###启动信息服务
+###运行信息服务
 ```
  cd swoole_yaf_rpc/message_service/server
- php swoole.php
+ php swoole.php start
 ```
 
 ###客户端展示
