@@ -25,7 +25,30 @@ class Server
      */
     private $application;
 
+    /*
+     * 投递信息
+     */
     private $taskInfo = [];
+
+    /*
+     * 主进程pid文件
+     */
+    private $masterPidFile;
+
+    /*
+     * 管理进程pid文件
+     */
+    private $managerPidFile;
+
+    /*
+     * 执行路径
+     */
+    private $runPath = '/tmp';
+
+    /*
+     *
+     */
+    private $processName;
 
     /*
      * 进程名称
@@ -44,8 +67,10 @@ class Server
 
     private function __construct()
     {
-        $this->config = parse_ini_file(PROJECT_ROOT . DS . 'config/swoole.ini', true);
-        $this->server = new \swoole_server($this->config['server']['ip'], $this->config['server']['port'], $this->config['swoole']['mode'], $this->config['swoole']['sock_type']);
+        $this->processName = sprintf('swoole-server-%s', PROJECT_NAME);
+
+        $this->masterPidFile = $this->runPath . DS . $this->processName . '.master.pid';
+        $this->managerPidFile = $this->runPath . DS . $this->processName . '.manager.pid';
     }
 
     public static function getInstance()
@@ -59,6 +84,35 @@ class Server
 
     public function run()
     {
+        $cmd = isset($_SERVER['argv'][1]) ? strtolower($_SERVER['argv'][1]) : 'help';
+        switch ($cmd) {
+            case 'stop':
+                $this->shutdown();
+                break;
+            case 'start':
+                $this->initServer();
+                $this->start();
+                break;
+            case 'reload':
+                $this->reload();
+                break;
+            case 'restart':
+                $this->shutdown();
+                sleep(2);
+                $this->initServer();
+                $this->start();
+                break;
+            default:
+                echo 'Usage:php swoole.php start | stop | reload | restart | help' . PHP_EOL;
+                break;
+        }
+    }
+
+    private function initServer()
+    {
+        $this->config = parse_ini_file(PROJECT_ROOT . DS . 'config/swoole.ini', true);
+        $this->server = new \swoole_server($this->config['server']['ip'], $this->config['server']['port'], $this->config['swoole']['mode'], $this->config['swoole']['sock_type']);
+
         $this->server->set($this->config['swoole']);
         $this->server->on('start', [$this, 'onStart']);
         $this->server->on('connect', [$this, 'onConnect']);
@@ -68,25 +122,77 @@ class Server
         $this->server->on('receive', [$this, 'onReceive']);
         $this->server->on('task', [$this, 'onTask']);
         $this->server->on('finish', [$this, 'onFinish']);
+    }
 
+    private function start()
+    {
         $this->server->start();
+    }
+
+    private function shutdown()
+    {
+        $masterId = $this->getPidFromFile($this->masterPidFile);
+
+        if (!$masterId) {
+            $this->log($this->processName . ': can not find master pid file');
+            $this->log($this->processName . ': stop [FAIL]');
+            return false;
+
+        //SIGTERM  15  mac 9
+        } elseif (!posix_kill($masterId, 9)) {
+            $this->log($this->processName . ': send signal to master failed');
+            $this->log($this->processName . ': stop [FAIL]');
+            return false;
+        }
+
+        unlink($this->masterPidFile);
+        unlink($this->managerPidFile);
+
+        $this->log($this->processName . ": stop [OK]");
+
+        return true;
+    }
+
+    /**
+     * reload worker
+     * @return bool
+     */
+    private function reload()
+    {
+        $managerId = $this->getPidFromFile($this->managerPidFile);
+
+        if (!$managerId) {
+            $this->log($this->processName . ': can not find manager pid file');
+            $this->log($this->processName . ': reload [FAIL]');
+            return false;
+
+        //SIGUSR1
+        } elseif (!posix_kill($managerId, 10)) {
+            $this->log($this->processName . ': send signal to manager failed');
+            $this->log($this->processName . ': stop [FAIL]');
+            return false;
+        }
+        $this->log($this->processName . ': reload [OK]');
+        return true;
     }
 
     public function onStart(\swoole_server $server)
     {
-        echo "\033[1A\n\033[K-----------------------\033[47;30m " . PROJECT_NAME . " \033[0m-----------------------------\n\033[0m";
-        echo 'swoole version:' . swoole_version() . '        PHP version:' . PHP_VERSION . '         yaf version:' . YAF_VERSION . "\n";
-        echo "------------------------\033[47;30m WORKERS \033[0m---------------------------\n";
+        file_put_contents($this->masterPidFile, $server->master_pid);
+        file_put_contents($this->managerPidFile, $server->manager_pid);
+        //echo "\033[1A\n\033[K-----------------------\033[47;30m " . PROJECT_NAME . " \033[0m-----------------------------\n\033[0m";
+        //echo 'swoole version:' . swoole_version() . '        PHP version:' . PHP_VERSION . '         yaf version:' . YAF_VERSION . "\n";
+        //echo "------------------------\033[47;30m WORKERS \033[0m---------------------------\n";
     }
 
     public function onConnect(\swoole_server $server, $fd, $from_id)
     {
-        echo "Worker#{$server->worker_pid} Client[$fd@$from_id]: Connect.\r\n";
+        //echo "Worker#{$server->worker_pid} Client[$fd@$from_id]: Connect.\r\n";
     }
 
     public function onClose($server, $fd, $from_id)
     {
-        echo "Worker#{$server->worker_pid} Client[$fd@$from_id]: fd=$fd is closed\r\n";
+        //echo "Worker#{$server->worker_pid} Client[$fd@$from_id]: fd=$fd is closed\r\n";
     }
 
     public function onManagerStart(\swoole_server $server)
@@ -221,6 +327,21 @@ class Server
         ];
 
         return $this->responseClient($server, $fd, $send_data, $data['protocol']);
+    }
+
+    private function log($msg)
+    {
+        echo $msg . PHP_EOL;
+    }
+
+    private function getPidFromFile($file)
+    {
+        $pid = false;
+        if (file_exists($file)) {
+            $pid = file_get_contents($file);
+        }
+
+        return $pid;
     }
     
     private function doTask(\swoole_server $server, $fd, $from_id, $requestInfo, $protocol_mode)

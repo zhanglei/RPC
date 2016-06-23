@@ -27,5 +27,5 @@ define('APPLICATION_PATH', PROJECT_ROOT . DS . 'application');
 
 include PROJECT_ROOT . '/../vendor/autoload.php';
 
-$server = \Swoole\Server::getInstance();
-$server->run();
+\Swoole\Server::getInstance()->run();
+
