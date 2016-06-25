@@ -237,23 +237,37 @@ class Server
         $protocol = substr($data, 4, 4);
         $protocol_mode = unpack('Nprotocol', $protocol)['protocol'];
 
-        $requestInfo = Format::packDecode($data, $protocol_mode, true);
-
-        // 判断数据是否正确
-        if (empty($requestInfo['service']) || empty($requestInfo['url']) || empty($requestInfo['type'])) {
-            // 发送数据给客户端，请求包错误
-            return $this->responseClient($server, $fd, Format::packFormat('', PROJECT_NAME . ' : bad request', 10001), $protocol_mode);
-        }
+//        try {
+//            $requestInfo = Format::packDecode($data, $protocol_mode, true);
+//        } catch (\Exception $request_e) {
+//            return $this->responseClient($server, $fd, Format::packFormat('', PROJECT_NAME . ' : ' . $request_e->getMessage(), $request_e->getCode()), $protocol_mode);
+//        }
+//
+//        // 判断数据是否正确
+//        if (empty($requestInfo['service']) || empty($requestInfo['url']) || empty($requestInfo['type'])) {
+//            // 发送数据给客户端，请求包错误
+//            return $this->responseClient($server, $fd, Format::packFormat('', PROJECT_NAME . ' : bad request', 10001), $protocol_mode);
+//        }
 
         ob_start();
 
         try {
+
+            $requestInfo = Format::packDecode($data, $protocol_mode, true);
+            if (empty($requestInfo['service']) || empty($requestInfo['url']) || empty($requestInfo['type'])) {
+                Exception::BadRequest();
+            }
+
             switch ($requestInfo['type']) {
                 case self::SYNC_MODE :
                     //分发请求
                     $this->dispatchRequest($requestInfo);
                     break;
                 case self::ASYNC_MODE :
+                    if (!isset($requestInfo['guid'])) {
+                        Exception::EmptyGuid();
+                    }
+                    
                     $this->doTask($server, $fd, $from_id, $requestInfo, $protocol_mode);
 
                     //return true;
