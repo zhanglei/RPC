@@ -41,21 +41,22 @@ make && make install
  start | stop | reload | restart | help
 ```
 
-###运行用户服务
+###运行服务监控
+> * 服务注册/发现，通过扫描swooletable获取到所有可用服务列表，并生成配置到指定路径
 ```
- cd swoole_yaf_rpc/user_service/server
- php swoole.php start
+ cd Rpc/service/server
+ php monitor.php
 ```
 
-###运行信息服务
+###运行服务
 ```
- cd swoole_yaf_rpc/message_service/server
+ cd Rpc/service/server
  php swoole.php start
 ```
 
 ###客户端展示
 ```
- curl http://localhost/swoole_yaf_rpc/client/public/index.php
+ curl http://localhost/Rpc/client/public/
 ```
 
 ##使用方法
@@ -66,12 +67,15 @@ make && make install
 1. asyncRequest 异步下发任务，成功返回guid(异步任务唯一标示)，可以在后续调用getAsyncData 获取所有下发的异步结果
 
 ```
+ //同步调用
  $user_info = \Rpc\Swoole::instance()->UserService()->asyncRequest('/index/user', ['php' => 'hello']);
  var_dump($user_info);
-
- $message_info = \Rpc\Swoole::instance()->MessageService()->syncRequest('/index/message/');
- var_dump($message_info);
-
+ 
+ //异步调用，返回guid
+ $guid = \Rpc\Swoole::instance()->MessageService()->syncRequest('/index/message/');
+ var_dump($guid);
+ 
+ //获取所有异步结果，数组形式key为异步调用的guid
  var_dump(\Rpc\Swoole::instance()->getAsyncData());
 ```
 
