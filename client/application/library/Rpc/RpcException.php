@@ -25,5 +25,15 @@ class RpcException extends \Exception
     {
         throw new self($server . ' : recive wrong or timeout', 10004);
     }
+    
+    public static function serviceNotExist()
+    {
+        throw new self('服务不存在', 10005);
+    }
+
+    public static function MissingServiceList()
+    {
+        throw new self('缺少可用服务列表', 10006);
+    }
 
 }

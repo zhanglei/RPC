@@ -4,9 +4,6 @@ namespace Rpc;
 
 abstract class Client
 {
-    protected $ip;
-
-    protected $port;
 
     /*
      * 当前调用的服务
@@ -71,61 +68,10 @@ abstract class Client
     abstract public function asyncRequest($url, $params);
 
     /**
-     * 链接服务端
-     * @return \swoole_client
-     */
-    abstract protected function _connect();
-
-    /**
-     * 发送数据给服务端
-     * @param $send_data
-     * @return int
-     */
-    abstract protected function _send($send_data);
-
-    /**
-     * 获取服务端返回数据
-     * @return string|array
-     */
-    abstract protected function _recv();
-
-    /**
      * 关闭服务端链接
      * @return mixed
      */
     abstract protected function _close();
-
-    /**
-     * @return mixed
-     */
-    public function getIp()
-    {
-        return $this->ip;
-    }
-
-    /**
-     * @param $ip
-     */
-    public function setIp($ip)
-    {
-        $this->ip = $ip;
-    }
-
-    /**
-     * @return mixed
-     */
-    public function getPort()
-    {
-        return $this->port;
-    }
-
-    /**
-     * @param $port
-     */
-    public function setPort($port)
-    {
-        $this->port = $port;
-    }
 
     /**
      * @return int

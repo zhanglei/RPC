@@ -6,6 +6,8 @@ class Json implements Protocol
 {
     public static $instance;
 
+    const PROTOCOLS_MODE = 0;
+
     public static function getInstance()
     {
         if (!self::$instance instanceof self) {
@@ -24,12 +26,13 @@ class Json implements Protocol
     public static function encode($value, $protocol = false)
     {
         $value = json_encode($value);
-
-        if ($protocol) {
-            return pack('N', strlen($value)) . pack('N', self::PROTOCOLS_MODE_JSON) . $value;
-        } else {
-            return pack('N', strlen($value)) . $value;
-        }
+        return pack('N', strlen($value)) . pack('N', self::PROTOCOLS_MODE_JSON) . $value;
+        
+//        if ($protocol) {
+//            return pack('N', strlen($value)) . pack('N', self::PROTOCOLS_MODE_JSON) . $value;
+//        } else {
+//            
+//        }
     }
 
     /**

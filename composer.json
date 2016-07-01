@@ -1,29 +1,29 @@
 {
-  "name": "rpc/swoole_server",
-  "require": {
-  },
-  "autoload": {
-    "psr-4": {
-      "Protocols\\": "src/Protocols",
-      "Packet\\": "src/Packet",
-      "Swoole\\": "src/Swoole"
+    "name": "Rpc/rpc",
+    "require": {
     },
-    "classmap": [
-    ],
-    "files": [
-      "src/Utilities/helpers.php"
-    ]
-  },
-  "config": {
-    "preferred-install": "dist",
-    "secure-http": false
-  },
-  "minimum-stability": "stable",
-  "prefer-stable": true,
-  "repositories": {
-    "packagist": {
-      "type": "composer",
-      "url": "https://packagist.phpcomposer.com"
+    "autoload": {
+        "psr-4": {
+            "Protocols\\": "src/Protocols",
+            "Packet\\": "src/Packet",
+            "Server\\": "src/Server",
+            "Monitor\\": "src/Monitor"
+        },
+        "classmap": [],
+        "files": [
+            "src/Utilities/helpers.php"
+        ]
+    },
+    "config": {
+        "preferred-install": "dist",
+        "secure-http": false
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "repositories": {
+        "packagist": {
+            "type": "composer",
+            "url": "https://packagist.phpcomposer.com"
+        }
     }
-  }
 }

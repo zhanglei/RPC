@@ -3,6 +3,7 @@
 namespace Rpc;
 
 use Packet\Format;
+use Protocols\Serialize;
 
 class Swoole extends Client
 {
@@ -31,24 +32,10 @@ class Swoole extends Client
     private function __construct()
     {
         $this->config = (new \Yaf_Config_Ini(PROJECT_ROOT . DS . 'config/client.ini', ENVIRON))->toArray();
-        $common_config = isset($this->config['swoole']) ? $this->config['swoole'] : [];
-
-        foreach ($this->config['servicegroup'] as $service => $config) {
-            $client = new \swoole_client(SWOOLE_TCP | SWOOLE_KEEP);
-            $group_config = isset($config['swoole']) ? $config['swoole'] : [];
-            $sw_config = array_merge($common_config, $group_config);
-
-            if (!empty($sw_config)) {
-                $client->set($sw_config);
-            }
-
-            self::$client[ucfirst($service)] = $client;
-        }
-        
-        $this->servicegroup = $this->config['servicegroup'];
         
         $protocol = 'Protocols\\' . ucfirst($this->config['protocol']);
-        $this->protocol = new $protocol;
+        $this->protocol = $protocol::PROTOCOLS_MODE;
+
     }
 
     /**
@@ -69,22 +56,7 @@ class Swoole extends Client
      */
     public function UserService()
     {
-        $this->currentService = [
-            'name'  => 'User',
-            'ip'    => $this->servicegroup['user']['ip'],
-            'port'  => $this->servicegroup['user']['port']
-        ];
-
-        return $this;
-    }
-
-    public function MessageService()
-    {
-        $this->currentService = [
-            'name'  => 'Message',
-            'ip'    => $this->servicegroup['message']['ip'],
-            'port'  => $this->servicegroup['message']['port']
-        ];
+        $this->currentService = 'userservice';
 
         return $this;
     }
@@ -98,25 +70,26 @@ class Swoole extends Client
      */
     public function syncRequest($url, $params = [])
     {
-        $service = $this->currentService['name'];
+        $this->guid = $this->_generateGuid();
 
-        if (empty($this->currentService) || !isset(self::$client[$service])) {
-            RpcException::invalidServices();
-        }
-        
-        $send_data = $this->protocol->encode(
+        $send_data = Format::packEncode(
             [
-                'service'   => $service,
                 'url'       => $url,
                 'params'    => $params,
-                'type'      => self::SYNC_MODE
+                'type'      => self::SYNC_MODE,
+                'guid'      => $this->guid
             ],
-            true
+            $this->protocol
         );
 
-        $this->_send($send_data);
+        $result = $this->doRequest($send_data, self::SYNC_MODE);
 
-        return $this->_recv();
+        if (isset($result['data'])) {
+            return $result['data']['data'];
+        } else {
+            return null;
+        }
+
     }
 
     /**
@@ -129,31 +102,26 @@ class Swoole extends Client
      */
     public function asyncRequest($url, $params = [])
     {
-        $service = $this->currentService['name'];
-
-        if (empty($this->currentService) || !isset(self::$client[$service])) {
-            RpcException::invalidServices();
-        }
-
         $this->guid = $this->_generateGuid();
-        
-        $send_data = $this->protocol->encode(
+
+        $send_data = Format::packEncode(
             [
-                'service'   => $this->currentService['name'],
                 'url'       => $url,
                 'params'    => $params,
                 'type'      => self::ASYNC_MODE,
                 'guid'      => $this->guid
             ],
-            true
+            $this->protocol
         );
 
-        self::$asynclist[$this->guid]['obj'] = self::$client[$service];
-        self::$asynclist[$this->guid]['service'] = $service;
+        $result = $this->doRequest($send_data, self::ASYNC_MODE);
         
-        $this->_send($send_data);
-
-        return $this->_recv();
+        if (isset($result['data'])) {
+            return $result['data']['guid'];
+        } else {
+            return null;
+        }
+        
     }
 
     /**
@@ -170,7 +138,7 @@ class Swoole extends Client
                         $result = $client->recv();
                         
                         if (!empty($result)) {
-                            $data = $this->protocol->decode($result);
+                            $data = Format::packDecode($result, $this->protocol);
 
                             if (isset(self::$asynclist[$data['data']['guid']])) {
                                 
@@ -204,68 +172,96 @@ class Swoole extends Client
         return self::$asynresult;
     }
 
-    /**
-     * 发送数据给服务端
-     * @param $send_data
-     * @return int
-     * @throws \Exception
-     */
-    protected function _send($send_data)
+    private function doRequest($send_data, $mode)
     {
-        $client = $this->_connect();
+        $client = $this->getClientConnect();
+
         $res = $client->send($send_data);
-        
+
         if (!$res) {
             $errCode = $client->errCode;
             throw new \Exception(socket_strerror($errCode), $errCode);
         }
-        
-        return $res;
-    }
 
-    /**
-     * 获取服务端返回数据
-     * @return string|array
-     * @throws RpcException
-     * @throws \Exception
-     */
-    protected function _recv()
-    {
-        $service = $this->currentService['name'];
-        $result = self::$client[$service]->recv();
-        $this->_close();
-
-        if ($result) {
-            $data = $this->protocol->decode($result);
-
-            if ($data['code'] != 0) {
-                throw new \Exception($data['message'], $data['code']);
-            }
-
-            return $data['data'];
-        } else {
-            RpcException::reciveFailed($service);
+        if ($mode == self::ASYNC_MODE) {
+            self::$asynclist[$this->guid]['obj'] = $client;
+            self::$asynclist[$this->guid]['service'] = $this->currentService;
         }
+        
+        $result = $this->resultData($client);
+        $this->_close();
+        
+        return $result; 
     }
-
-    /**
-     * 连接服务端
-     * @return \swoole_client
-     * @throws RpcException
-     */
-    protected function _connect()
+    
+    private function getClientConnect()
     {
-        if (empty($this->currentService) || !isset(self::$client[$this->currentService['name']])) {
+        if (empty($this->currentService)) {
             RpcException::invalidServices();
         }
 
-        $client = self::$client[$this->currentService['name']];
+        if (!isset($this->servicegroup[$this->currentService])) {
 
-        if (!$client->connect($this->currentService['ip'], $this->currentService['port'], $this->timeout)) {
-            RpcException::connectFailed("swoole connect failed. Error: {$client->errCode}\n");
+            if (!file_exists(PROJECT_ROOT . DS . 'config/serverlist.ini')) {
+                RpcException::MissingServiceList();
+            }
+
+            $serverlist = (new \Yaf_Config_Ini(PROJECT_ROOT . DS . 'config/serverlist.ini', 'serverlist'))->toArray();
+
+            if (!isset($serverlist[$this->currentService])) {
+                RpcException::serviceNotExist();
+            }
+
+            $this->servicegroup[$this->currentService] = $serverlist[$this->currentService];
         }
 
-        return $client;
+        $key = array_rand($this->servicegroup[$this->currentService]);
+        $connect_info = $this->servicegroup[$this->currentService][$key];
+
+        if (!isset(self::$client[$key])) {
+            $client = new \swoole_client(SWOOLE_SOCK_TCP | SWOOLE_KEEP);
+            $client->set(isset($this->config['swoole']) ? $this->config['swoole'] : []);
+
+            if (!$client->connect($connect_info['ip'], $connect_info['port'], $this->timeout)) {
+                RpcException::connectFailed('swoole connect failed. Error: ' . socket_strerror($client->errCode));
+            }
+
+            self::$client[$key] = $client;
+        }
+
+        return self::$client[$key];
+    }
+
+    private function resultData($client)
+    {
+        while (true) {
+            $result = $client->recv();
+
+            if (!empty($result)) {
+                $data = Format::packDecode($result, $this->protocol);
+
+                if ($data['data']['guid'] != $this->guid) {
+                    if (isset(self::$asynclist[$data['data']['guid']])) {
+
+                        if ($data['code'] == 0) {
+                            self::$asynresult[$data['data']['guid']] = $data['data'];
+                        } else {
+                            self::$asynresult[$data['data']['guid']] = Format::packFormat('', $data['message'], $data['code']);
+                        }
+
+                        unset(self::$asynclist[$data['data']['guid']]);
+
+                    } else {
+                        continue;
+                    }
+                } else {
+                    return $data;
+                }
+            } else {
+                $data = Format::packFormat('', 'Service_' . $this->guid . ' : recive wrong or timeout', 10005);
+                return $data;
+            }
+        }
     }
 
     /**

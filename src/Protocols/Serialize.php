@@ -5,6 +5,8 @@ namespace Protocols;
 class Serialize implements Protocol
 {
     public static $instance;
+    
+    const PROTOCOLS_MODE = 1;
 
     public static function getInstance()
     {
@@ -18,37 +20,26 @@ class Serialize implements Protocol
     /**
      * 打包
      * @param $value
-     * @param bool $protocol
      * @return string
      */
-    public static function encode($value, $protocol = false)
+    public static function encode($value)
     {
         $value = serialize($value);
-        
-        if ($protocol) {
-            return pack('N', strlen($value)) . pack('N', self::PROTOCOLS_MODE_SERIALIZE) . $value;
-        } else {
-            return pack('N', strlen($value)) . $value;
-        }
+        return pack('N', strlen($value)) . pack('N', self::PROTOCOLS_MODE_SERIALIZE) . $value;
         
     }
 
     /**
      * 解包
      * @param $str
-     * @param bool $protocol
      * @return bool|array
      */
-    public static function decode($str, $protocol = false)
+    public static function decode($str)
     {
         $header = substr($str, 0, 4);
         $len = unpack('Nlen', $header)['len'];
-        
-        if ($protocol) {
-            $result = substr($str, 8);
-        } else {
-            $result = substr($str, 4);
-        }
+
+        $result = substr($str, 8);
 
         if ($len != strlen($result)) {
             Exception::LengthInvalid();

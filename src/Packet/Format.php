@@ -31,20 +31,19 @@ class Format
      * 解包
      * @param $pack
      * @param int $protocol_mode
-     * @param bool $protocol        协议头
      * @return array
      */
-    public static function packDecode($pack, $protocol_mode = 0, $protocol = false)
+    public static function packDecode($pack, $protocol_mode = 0)
     {
         switch ($protocol_mode) {
             case Protocol::PROTOCOLS_MODE_JSON :
-                $pack = Json::decode($pack, $protocol);
+                $pack = Json::decode($pack);
                 break;
             case Protocol::PROTOCOLS_MODE_SERIALIZE :
-                $pack = Serialize::decode($pack, $protocol);
+                $pack = Serialize::decode($pack);
                 break;
             default:
-                $pack = Json::decode($pack, $protocol);
+                $pack = Json::decode($pack);
                 break;
         }
         

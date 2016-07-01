@@ -1,27 +1,32 @@
 <?php
 
-namespace Swoole;
+namespace Server;
 
+use Monitor\SwooleTable;
 use Packet\Format;
-use Packet\Response;
 
-class Server
+class Swoole
 {
 
     private static $instance;
-    
+
     /*
      * 配置
      */
     private $config;
-
+    
     /*
+     * 服务上报配置
+     */
+    private $monitor_config;
+
+    /**
      * @var \swoole_server
      */
     private $server;
 
-    /*
-     * 服务
+    /**
+     * @var \Yaf_Application
      */
     private $application;
 
@@ -54,12 +59,12 @@ class Server
      * 进程名称
      */
     const WORK_NAME = 'swoole-worker-%d';
-    
+
     /*
      * 同步模式
      */
     const SYNC_MODE = 1;
-    
+
     /*
      * 异步模式
      */
@@ -110,7 +115,7 @@ class Server
 
     private function initServer()
     {
-        $this->config = parse_ini_file(PROJECT_ROOT . DS . 'config/swoole.ini', true);
+        $this->config = (new \Yaf_Config_Ini(PROJECT_ROOT . DS . 'config/swoole.ini'))->toArray();
         $this->server = new \swoole_server($this->config['server']['ip'], $this->config['server']['port'], $this->config['swoole']['mode'], $this->config['swoole']['sock_type']);
 
         $this->server->set($this->config['swoole']);
@@ -126,6 +131,12 @@ class Server
 
     private function start()
     {
+        
+        //启动服务上报
+        $this->monitor_config = (new \Yaf_Config_Ini(PROJECT_ROOT . DS . 'config/monitor.ini'))->toArray();
+        $process = new \swoole_process([$this, 'serviceReport']);
+        $this->server->addProcess($process);
+
         $this->server->start();
     }
 
@@ -138,8 +149,8 @@ class Server
             $this->log($this->processName . ': stop [FAIL]');
             return false;
 
-        //SIGTERM  15  mac 9
-        } elseif (!posix_kill($masterId, 9)) {
+        //SIGTERM  15
+        } else if (!posix_kill($masterId, 15)) {
             $this->log($this->processName . ': send signal to master failed');
             $this->log($this->processName . ': stop [FAIL]');
             return false;
@@ -167,13 +178,52 @@ class Server
             return false;
 
         //SIGUSR1
-        } elseif (!posix_kill($managerId, 10)) {
+        } else if (!posix_kill($managerId, 10)) {
             $this->log($this->processName . ': send signal to manager failed');
             $this->log($this->processName . ': stop [FAIL]');
             return false;
         }
         $this->log($this->processName . ': reload [OK]');
         return true;
+    }
+
+    public function serviceReport(\swoole_process $process)
+    {
+        while (true) {
+            $data = [
+                'node' => [
+                    'name'  => PROJECT_NAME,
+                    'ip'    => $this->getServerIP(),
+                    'port'  => $this->config['server']['port'],
+                    'time'  => time()
+                    
+                ],
+                'stats' => $this->server->stats()
+            ];
+
+            SwooleTable::getInstance()->report(serialize($data));
+
+            sleep(10);
+        }
+    }
+
+    private function getServerIP()
+    {
+        if ($this->config['server']['ip'] == '0.0.0.0' || $this->config['server']['ip'] == '127.0.0.1') {
+            $serverIps = swoole_get_local_ip();
+            $patternArray = [
+                '192\.168\.'
+            ];
+            
+            foreach ($serverIps as $serverIp) {
+                // 匹配内网IP
+                if (preg_match('#^' . implode('|', $patternArray) . '#', $serverIp)) {
+                    return $serverIp;
+                }
+            }
+        }
+        
+        return $this->config['server']['ip'];
     }
 
     public function onStart(\swoole_server $server)
@@ -201,15 +251,9 @@ class Server
 
     public function onWorkerStart(\swoole_server $server, $workerId)
     {
-        if (!$this->application instanceof \Yaf_Application) {
-            $this->application = new \Yaf_Application(PROJECT_ROOT . DS . 'config/application.ini');
-            $this->application->getDispatcher()->getRouter()->addConfig(
-                (new \Yaf_Config_Ini(PROJECT_ROOT . '/config/routes.ini', ENVIRON))->get('routes')
-            );
-
-            //注册响应
-            //\Yaf_Registry::set('HTTP_RESPONSE', (new \Yaf_Response_Http()));
-        }
+//        if (!$this->application instanceof \Yaf_Application) {
+//            $this->application = new \Yaf_Application(PROJECT_ROOT . DS . 'config/application.ini');
+//        }
 
 //        $istask = $server->taskworker;
 //
@@ -235,65 +279,49 @@ class Server
     {
         //数据格式
         $protocol = substr($data, 4, 4);
-        $protocol_mode = unpack('Nprotocol', $protocol)['protocol'];
-
-//        try {
-//            $requestInfo = Format::packDecode($data, $protocol_mode, true);
-//        } catch (\Exception $request_e) {
-//            return $this->responseClient($server, $fd, Format::packFormat('', PROJECT_NAME . ' : ' . $request_e->getMessage(), $request_e->getCode()), $protocol_mode);
-//        }
-//
-//        // 判断数据是否正确
-//        if (empty($requestInfo['service']) || empty($requestInfo['url']) || empty($requestInfo['type'])) {
-//            // 发送数据给客户端，请求包错误
-//            return $this->responseClient($server, $fd, Format::packFormat('', PROJECT_NAME . ' : bad request', 10001), $protocol_mode);
-//        }
-
-        ob_start();
+        $protocol_mode = unpack('N', $protocol)[1];
+        $send_data = [];
 
         try {
 
-            $requestInfo = Format::packDecode($data, $protocol_mode, true);
-            if (empty($requestInfo['service']) || empty($requestInfo['url']) || empty($requestInfo['type'])) {
+            $requestInfo = Format::packDecode($data, $protocol_mode);
+            if (empty($requestInfo['url']) || empty($requestInfo['type'])) {
                 Exception::BadRequest();
             }
 
             switch ($requestInfo['type']) {
                 case self::SYNC_MODE :
                     //分发请求
-                    $this->dispatchRequest($requestInfo);
+                    //$this->dispatchRequest($requestInfo);
+                    $this->doTask($server, $fd, $from_id, $requestInfo, $protocol_mode);
+                    return true;
                     break;
                 case self::ASYNC_MODE :
                     if (!isset($requestInfo['guid'])) {
                         Exception::EmptyGuid();
                     }
-                    
-                    $this->doTask($server, $fd, $from_id, $requestInfo, $protocol_mode);
 
-                    //return true;
+                    $send_data = $this->doTask($server, $fd, $from_id, $requestInfo, $protocol_mode);
                     break;
             }
         } catch (\Exception $e) {
             $exception = $e;
         }
 
-        $result = ob_get_contents();
-
-        ob_end_clean();
-
         if (isset($exception) && $exception instanceof \Exception) {
             $send_data = Format::packFormat('', PROJECT_NAME . ' : ' . $exception->getMessage(), $exception->getCode());
-        } else {
-            $result = unserialize($result);
-            $send_data = Format::packFormat($result['data'], $result['message'], $result['code']);
         }
 
         return $this->responseClient($server, $fd, $send_data, $protocol_mode);
-        
+
     }
 
     public function onTask(\swoole_server $server, $task_id, $from_id, $data)
     {
+        if (!$this->application instanceof \Yaf_Application) {
+            $this->application = new \Yaf_Application(PROJECT_ROOT . DS . 'config/application.ini');
+        }
+        
         ob_start();
 
         try {
@@ -358,7 +386,7 @@ class Server
 
         return $pid;
     }
-    
+
     private function doTask(\swoole_server $server, $fd, $from_id, $requestInfo, $protocol_mode)
     {
         $this->taskInfo[$fd][$requestInfo['guid']] = true;
@@ -366,14 +394,17 @@ class Server
         $task = [
             'guid'      => $requestInfo['guid'],
             'fd'        => $fd,
-            'service'   => $requestInfo['service'],
             'url'       => $requestInfo['url'],
             'params'    => $requestInfo['params'],
             'protocol'  => $protocol_mode
         ];
 
         $server->task($task);
-        echo serialize(Format::packFormat($requestInfo['guid'], PROJECT_NAME . ' : task success'));
+        $send_data = [
+            'guid' => $requestInfo['guid']
+        ];
+
+        return Format::packFormat($send_data, PROJECT_NAME . ' : task success');
     }
 
     /**
@@ -382,16 +413,15 @@ class Server
      */
     private function dispatchRequest($data)
     {
+        $path_info = explode('/', strtolower($data['url']));
+        unset($path_info[0]);
 
-        $request_uri = $data['service'] . $data['url'];
-        $request = new \Yaf_Request_Http($request_uri);
+        $module = $path_info[1];
+        $controller = isset($path_info[2]) ? $path_info[2] : $this->application->getConfig()->get('yaf')->get('dispatcher')->get('defaultController');
+        $action = isset($path_info[3]) ? $path_info[3] : $this->application->getConfig()->get('yaf')->get('dispatcher')->get('defaultAction');
 
-        if (!empty($data['params'])) {
-            foreach ($data['params'] as $name => $value) {
-                $request->setParam($name, $value);
-            }
-        }
-
+        $request = new \Yaf_Request_Simple('SWOOLE_RPC', $module, $controller, $action, $data['params']);
+        
         /*
          * 关闭YAF的异常捕获
          * YAF的异常捕获只能捕获一次  之后的错误  不会触发ErrorController
@@ -406,13 +436,6 @@ class Server
          */
         $this->application->bootstrap()->getDispatcher()->dispatch($request);
 
-//        $send_data = Format::packFormat(
-//            unserialize(\Yaf_Registry::get('HTTP_RESPONSE')->getBody('data')),
-//            \Yaf_Registry::get('HTTP_RESPONSE')->getBody('message'),
-//            \Yaf_Registry::get('HTTP_RESPONSE')->getBody('code')
-//        );
-//
-//        return $this->responseClient($server, $fd, $send_data, $protocol_mode);
     }
 
     /**

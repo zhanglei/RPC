@@ -1,6 +1,6 @@
 <?php
 
-namespace Swoole;
+namespace Server;
 
 class Exception extends \Exception
 {
