@@ -68,11 +68,11 @@ make && make install
 
 ```
  //同步调用
- $user_info = \Rpc\Swoole::instance()->UserService()->asyncRequest('/index/user', ['php' => 'hello']);
+ $user_info = \Rpc\Swoole::instance()->UserService()->asyncRequest('/user/index/user', ['php' => 'hello']);
  var_dump($user_info);
  
  //异步调用，返回guid
- $guid = \Rpc\Swoole::instance()->MessageService()->syncRequest('/index/message/');
+ $guid = \Rpc\Swoole::instance()->MessageService()->syncRequest('/user/index/test');
  var_dump($guid);
  
  //获取所有异步结果，数组形式key为异步调用的guid
