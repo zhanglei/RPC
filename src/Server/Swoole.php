@@ -2,7 +2,7 @@
 
 namespace Server;
 
-use Monitor\SwooleTable;
+use Monitor\Client;
 use Packet\Format;
 
 class Swoole
@@ -14,11 +14,6 @@ class Swoole
      * 配置
      */
     private $config;
-    
-    /*
-     * 服务上报配置
-     */
-    private $monitor_config;
 
     /**
      * @var \swoole_server
@@ -48,17 +43,12 @@ class Swoole
     /*
      * 执行路径
      */
-    private $runPath = '/tmp';
+    //private $runPath = PROJECT_ROOT . DS . 'pid';
 
     /*
      *
      */
     private $processName;
-
-    /*
-     * 进程名称
-     */
-    const WORK_NAME = 'swoole-worker-%d';
 
     /*
      * 同步模式
@@ -72,10 +62,16 @@ class Swoole
 
     private function __construct()
     {
-        $this->processName = sprintf('swoole-server-%s', PROJECT_NAME);
+        $this->config = (new \Yaf_Config_Ini(PROJECT_ROOT . DS . 'config/swoole.ini'))->toArray();
 
-        $this->masterPidFile = $this->runPath . DS . $this->processName . '.master.pid';
-        $this->managerPidFile = $this->runPath . DS . $this->processName . '.manager.pid';
+        $this->processName = 'swoole-server-' . $this->config['server']['ip'] . '-' . $this->config['server']['port'];
+
+        if (!file_exists($this->config['server']['pid_path'])) {
+            mkdir($this->config['server']['pid_path'], 0700);
+        }
+
+        $this->masterPidFile = $this->config['server']['pid_path'] . DS . $this->processName . '.master.pid';
+        $this->managerPidFile = $this->config['server']['pid_path'] . DS . $this->processName . '.manager.pid';
     }
 
     public static function getInstance()
@@ -115,7 +111,6 @@ class Swoole
 
     private function initServer()
     {
-        $this->config = (new \Yaf_Config_Ini(PROJECT_ROOT . DS . 'config/swoole.ini'))->toArray();
         $this->server = new \swoole_server($this->config['server']['ip'], $this->config['server']['port'], $this->config['swoole']['mode'], $this->config['swoole']['sock_type']);
 
         $this->server->set($this->config['swoole']);
@@ -131,9 +126,7 @@ class Swoole
 
     private function start()
     {
-        
-        //启动服务上报
-        $this->monitor_config = (new \Yaf_Config_Ini(PROJECT_ROOT . DS . 'config/monitor.ini'))->toArray();
+        //服务上报进程
         $process = new \swoole_process([$this, 'serviceReport']);
         $this->server->addProcess($process);
 
@@ -149,8 +142,8 @@ class Swoole
             $this->log($this->processName . ': stop [FAIL]');
             return false;
 
-        //SIGTERM  15
-        } else if (!posix_kill($masterId, 15)) {
+        //SIGTERM  15  SIGKILL 9
+        } else if (!posix_kill($masterId, SIGKILL)) {
             $this->log($this->processName . ': send signal to master failed');
             $this->log($this->processName . ': stop [FAIL]');
             return false;
@@ -177,8 +170,8 @@ class Swoole
             $this->log($this->processName . ': reload [FAIL]');
             return false;
 
-        //SIGUSR1
-        } else if (!posix_kill($managerId, 10)) {
+        //SIGUSR1  10
+        } else if (!posix_kill($managerId, SIGUSR1)) {
             $this->log($this->processName . ': send signal to manager failed');
             $this->log($this->processName . ': stop [FAIL]');
             return false;
@@ -201,7 +194,7 @@ class Swoole
                 'stats' => $this->server->stats()
             ];
 
-            SwooleTable::getInstance()->report(serialize($data));
+            Client::getInstance()->report(serialize($data));
 
             sleep(10);
         }

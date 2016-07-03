@@ -82,7 +82,7 @@ class Swoole extends Client
             $this->protocol
         );
 
-        $result = $this->doRequest($send_data, self::SYNC_MODE);
+        $result = $this->callRequest($send_data, self::SYNC_MODE);
 
         if (isset($result['data'])) {
             return $result['data']['data'];
@@ -114,7 +114,7 @@ class Swoole extends Client
             $this->protocol
         );
 
-        $result = $this->doRequest($send_data, self::ASYNC_MODE);
+        $result = $this->callRequest($send_data, self::ASYNC_MODE);
         
         if (isset($result['data'])) {
             return $result['data']['guid'];
@@ -172,7 +172,7 @@ class Swoole extends Client
         return self::$asynresult;
     }
 
-    private function doRequest($send_data, $mode)
+    private function callRequest($send_data, $mode)
     {
         $client = $this->getClientConnect();
 

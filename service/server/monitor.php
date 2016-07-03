@@ -12,4 +12,5 @@ define('PROJECT_ROOT', realpath(dirname(__DIR__)));
 
 include PROJECT_ROOT . '/../vendor/autoload.php';
 
-\Monitor\SwooleTable::getInstance()->run();
+//Monitor\Server::getInstance('swooletable')->run();
+Monitor\Server::getInstance('redis')->run();
