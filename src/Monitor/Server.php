@@ -2,6 +2,8 @@
 
 namespace Monitor;
 
+use Helper\Console;
+
 class Server
 {
 
@@ -30,15 +32,6 @@ class Server
         $class_name = '\Monitor\Container\\' . ucfirst(strtolower($storage));
         $this->handle = $class_name::getInstance();
 
-//        $class_name = '\Monitor\Container\\' . ucfirst(strtolower($storage));
-//        $this->handle = $class_name::getInstance();
-//
-//        $this->config = parse_ini_file(PROJECT_ROOT . DS . 'config/monitor.ini', true);
-//
-//        $this->server = new \swoole_server($this->config['server']['ip'], $this->config['server']['port'], $this->config['swoole']['mode'], $this->config['swoole']['sock_type']);
-//
-//        $this->server->set($this->config['swoole']);
-//        $this->server->on('packet', [$this, 'onPacket']);
     }
 
     public static function getInstance($storage = 'redis')
@@ -77,6 +70,9 @@ class Server
         
     }
 
+    /**
+     * 初始化服务
+     */
     private function initMonitor()
     {
         $this->server = new \swoole_server($this->config['server']['ip'], $this->config['server']['port'], $this->config['swoole']['mode'], $this->config['swoole']['sock_type']);
@@ -85,70 +81,38 @@ class Server
         $this->server->on('packet', [$this, 'onPacket']);
         $this->server->on('start', [$this, 'onStart']);
     }
-    
+
+    /**
+     * 启动服务
+     */
     private function start()
     {
         $this->handle->create();
         $this->server->start();
     }
 
+    /**
+     * 重启worker进程
+     * @return bool
+     */
     private function reload()
     {
-        $managerId = $this->getPidFromFile($this->managerPidFile);
-
-        if (!$managerId) {
-            $this->log($this->processName . ': can not find manager pid file');
-            $this->log($this->processName . ': reload [FAIL]');
-            return false;
-
-        //SIGUSR1 10
-        } else if (!posix_kill($managerId, SIGUSR1)) {
-            $this->log($this->processName . ': send signal to manager failed');
-            $this->log($this->processName . ': stop [FAIL]');
-            return false;
-        }
-        
-        $this->log($this->processName . ': reload [OK]');
-        return true;
+        return Console::reload($this->managerPidFile, $this->processName);
     }
 
+    /**
+     * @return bool
+     */
     private function shutdown()
     {
-        $masterId = $this->getPidFromFile($this->masterPidFile);
+        if (Console::shutdown($this->masterPidFile, $this->processName)) {
+            unlink($this->masterPidFile);
+            unlink($this->managerPidFile);
 
-        if (!$masterId) {
-            $this->log($this->processName . ': can not find master pid file');
-            $this->log($this->processName . ': stop [FAIL]');
-            return false;
-
-        //SIGTERM  15  SIGKILL 9
-        } else if (!posix_kill($masterId, SIGKILL)) {
-            $this->log($this->processName . ': send signal to master failed');
-            $this->log($this->processName . ': stop [FAIL]');
-            return false;
+            return true;
         }
 
-        unlink($this->masterPidFile);
-        unlink($this->managerPidFile);
-
-        $this->log($this->processName . ": stop [OK]");
-
-        return true;
-    }
-
-    private function getPidFromFile($file)
-    {
-        $pid = false;
-        if (file_exists($file)) {
-            $pid = file_get_contents($file);
-        }
-
-        return $pid;
-    }
-
-    private function log($msg)
-    {
-        echo $msg . PHP_EOL;
+        return false;
     }
 
     public function onStart(\swoole_server $server)

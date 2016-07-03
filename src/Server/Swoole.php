@@ -2,6 +2,7 @@
 
 namespace Server;
 
+use Helper\Console;
 use Monitor\Client;
 use Packet\Format;
 
@@ -109,6 +110,9 @@ class Swoole
         }
     }
 
+    /**
+     * 初始化服务
+     */
     private function initServer()
     {
         $this->server = new \swoole_server($this->config['server']['ip'], $this->config['server']['port'], $this->config['swoole']['mode'], $this->config['swoole']['sock_type']);
@@ -124,6 +128,9 @@ class Swoole
         $this->server->on('finish', [$this, 'onFinish']);
     }
 
+    /**
+     * 启动服务
+     */
     private function start()
     {
         //服务上报进程
@@ -133,53 +140,35 @@ class Swoole
         $this->server->start();
     }
 
+    /**
+     * 关闭服务器
+     * @return bool
+     */
     private function shutdown()
     {
-        $masterId = $this->getPidFromFile($this->masterPidFile);
+        if (Console::shutdown($this->masterPidFile, $this->processName)) {
+            unlink($this->masterPidFile);
+            unlink($this->managerPidFile);
 
-        if (!$masterId) {
-            $this->log($this->processName . ': can not find master pid file');
-            $this->log($this->processName . ': stop [FAIL]');
-            return false;
-
-        //SIGTERM  15  SIGKILL 9
-        } else if (!posix_kill($masterId, SIGKILL)) {
-            $this->log($this->processName . ': send signal to master failed');
-            $this->log($this->processName . ': stop [FAIL]');
-            return false;
+            return true;
         }
 
-        unlink($this->masterPidFile);
-        unlink($this->managerPidFile);
-
-        $this->log($this->processName . ": stop [OK]");
-
-        return true;
+        return false;
     }
 
     /**
-     * reload worker
+     * 重启worker进程
      * @return bool
      */
     private function reload()
     {
-        $managerId = $this->getPidFromFile($this->managerPidFile);
-
-        if (!$managerId) {
-            $this->log($this->processName . ': can not find manager pid file');
-            $this->log($this->processName . ': reload [FAIL]');
-            return false;
-
-        //SIGUSR1  10
-        } else if (!posix_kill($managerId, SIGUSR1)) {
-            $this->log($this->processName . ': send signal to manager failed');
-            $this->log($this->processName . ': stop [FAIL]');
-            return false;
-        }
-        $this->log($this->processName . ': reload [OK]');
-        return true;
+        return Console::reload($this->managerPidFile, $this->processName);
     }
 
+    /**
+     * 上报服务信息
+     * @param \swoole_process $process
+     */
     public function serviceReport(\swoole_process $process)
     {
         while (true) {
@@ -200,6 +189,10 @@ class Swoole
         }
     }
 
+    /**
+     * 获取服务器真实ip
+     * @return string
+     */
     private function getServerIP()
     {
         if ($this->config['server']['ip'] == '0.0.0.0' || $this->config['server']['ip'] == '127.0.0.1') {
@@ -363,21 +356,6 @@ class Swoole
         ];
 
         return $this->responseClient($server, $fd, $send_data, $data['protocol']);
-    }
-
-    private function log($msg)
-    {
-        echo $msg . PHP_EOL;
-    }
-
-    private function getPidFromFile($file)
-    {
-        $pid = false;
-        if (file_exists($file)) {
-            $pid = file_get_contents($file);
-        }
-
-        return $pid;
     }
 
     private function doTask(\swoole_server $server, $fd, $from_id, $requestInfo, $protocol_mode)
