@@ -278,7 +278,6 @@ class Swoole
             switch ($requestInfo['type']) {
                 case self::SYNC_MODE :
                     //分发请求
-                    //$this->dispatchRequest($requestInfo);
                     $this->doTask($server, $fd, $from_id, $requestInfo, $protocol_mode);
                     return true;
                     break;
@@ -305,7 +304,7 @@ class Swoole
     public function onTask(\swoole_server $server, $task_id, $from_id, $data)
     {
         if (!$this->application instanceof \Yaf_Application) {
-            $this->application = new \Yaf_Application(PROJECT_ROOT . DS . 'config/application.ini');
+            $this->application = new \Yaf_Application(PROJECT_ROOT . DS . 'config/application.ini', ENVIRON);
         }
         
         ob_start();
