@@ -32,6 +32,40 @@ make && make install
 ```
 ----------
 
+##使用
+RPC/service/config/swoole.ini 存放swoole运行时配置
+```
+[server]
+;ip
+ip = "0.0.0.0"
+;端口
+port = 9501
+;pid存在目录
+pid_path = PROJECT_ROOT'/pid'
+
+[swoole]
+;
+mode = SWOOLE_PROCESS
+;
+sock_type = SWOOLE_SOCK_TCP
+dispatch_mode = 3
+;worker进程数
+worker_num = 4
+reactor_num = 4
+package_length_type = N
+package_length_offset = 0
+package_body_offset = 8
+package_max_length = 2000000
+task_worker_num = 20
+log_file = "/tmp/swoole-server-0.0.0.0_9501.log"
+;守护进程改成true
+daemonize = true
+```
+
+
+
+----------
+
 #快速开始
 ```
  composer install
@@ -44,19 +78,19 @@ make && make install
 ###运行服务监控
 > * 服务注册/发现，通过扫描 swooletable/redis 获取到所有可用服务列表，并生成配置到指定路径
 ```
- cd Rpc/service/server
+ cd RPC/service/server
  php monitor.php start
 ```
 
 ###运行服务
 ```
- cd Rpc/service/server
+ cd RPC/service/server
  php swoole.php start
 ```
 
 ###客户端展示
 ```
- curl http://localhost/Rpc/client/public/
+ curl http://localhost/RPC/client/public/
 ```
 
 ##使用方法
