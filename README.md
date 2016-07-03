@@ -42,10 +42,10 @@ make && make install
 ```
 
 ###运行服务监控
-> * 服务注册/发现，通过扫描swooletable获取到所有可用服务列表，并生成配置到指定路径
+> * 服务注册/发现，通过扫描 swooletable/redis 获取到所有可用服务列表，并生成配置到指定路径
 ```
  cd Rpc/service/server
- php monitor.php
+ php monitor.php start
 ```
 
 ###运行服务
