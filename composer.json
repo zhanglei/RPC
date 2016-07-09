@@ -1,14 +1,12 @@
 {
     "name": "Rpc/rpc",
     "require": {
+        "php": ">=5.4",
+        "ext-swoole": ">=1.8"
     },
     "autoload": {
         "psr-4": {
-            "Protocols\\": "src/Protocols",
-            "Packet\\": "src/Packet",
-            "Server\\": "src/Server",
-            "Monitor\\": "src/Monitor",
-            "Helper\\": "src/Helper"
+            "Swoole\\": "src/Swoole"
         },
         "classmap": [],
         "files": []
