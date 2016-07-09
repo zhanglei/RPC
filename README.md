@@ -1,11 +1,10 @@
 ## RPC
-swoole结合yaf的rpc  可部署多个端口作为不同服务
+swoole RPC
 
 ----------
 ##环境依赖
 > * Swoole 1.8.x+
 > * PHP 5.4+
-> * Yaf 2.3.x+
 > * Composer
 
 ## Install
@@ -13,14 +12,6 @@ swoole结合yaf的rpc  可部署多个端口作为不同服务
 ### Install composer
 ```
  curl -sS https://getcomposer.org/installer | php
-```
-
-### Install Yaf
-```
-cd yaf
-phpize
-./configure --with-php-config=/path/to/php-config
-make && make install
 ```
 
 ### Install swoole
@@ -36,30 +27,40 @@ make && make install
 RPC/service/config/swoole.ini 存放swoole运行时配置
 ```
 [server]
-;ip
-ip = "0.0.0.0"
+;地址
+host = "0.0.0.0"
 ;端口
 port = 9501
-;pid存在目录
-pid_path = PROJECT_ROOT'/pid'
+;运行模式
+mode = SWOOLE_PROCESS
+;socket类型
+sock_type = SWOOLE_SOCK_TCP
+;pid存放路径
+pid_path = PROJECT_ROOT'/run'
+
+[monitor]
+;服务上报地址
+host = "127.0.0.1"
+;端口
+port = 9569
+;;socket类型
+sock_type = SWOOLE_SOCK_UDP
 
 [swoole]
-;
-mode = SWOOLE_PROCESS
-;
-sock_type = SWOOLE_SOCK_TCP
+
 dispatch_mode = 3
 ;worker进程数
 worker_num = 4
-reactor_num = 4
-package_length_type = N
+max_request = 0
+open_length_check = 1
+package_length_type = "N"
 package_length_offset = 0
-package_body_offset = 8
 package_max_length = 2000000
 task_worker_num = 20
 log_file = "/tmp/swoole-server-0.0.0.0_9501.log"
-;守护进程改成true
-daemonize = true
+;守护进程改成1
+daemonize = 0
+
 ```
 
 
@@ -76,10 +77,10 @@ daemonize = true
 ```
 
 ###运行服务监控
-> * 服务注册/发现，通过扫描 swooletable/redis 获取到所有可用服务列表，并生成配置到指定路径
+> * 服务注册/发现，通过扫描redis获取到所有可用服务列表，并生成配置到指定路径
 ```
  cd RPC/service/server
- php monitor.php start
+ php discovery.php start
 ```
 
 ###运行服务
@@ -89,27 +90,40 @@ daemonize = true
 ```
 
 ###客户端展示
+> * 需要配置服务发现生成的ip地址文件
 ```
- curl http://localhost/RPC/client/public/
+ cd RPC/service/client
+ php swoole.php start
 ```
 
 ##使用方法
 
 ###客户端(Client)
 
-0. syncRequest 同步下发任务阻塞等待结果返回
-1. asyncRequest 异步下发任务，成功返回guid(异步任务唯一标示)，可以在后续调用getAsyncData 获取所有下发的异步结果
+0. call 下发任务
+1. task 下发task任务，适合用于处理逻辑时间长的业务，而不关心结果
 
 ```
- //同步调用
- $user_info = \Rpc\Swoole::instance()->UserService()->asyncRequest('/user/index/user', ['php' => 'hello']);
- var_dump($user_info);
- 
- //异步调用，返回guid
- $guid = \Rpc\Swoole::instance()->MessageService()->syncRequest('/user/index/test');
- var_dump($guid);
- 
- //获取所有异步结果，数组形式key为异步调用的guid
- var_dump(\Rpc\Swoole::instance()->getAsyncData());
+$client = new \Swoole\Client\SOA();
+$client->setServiceList(PROJECT_ROOT . DS . 'client/config/serverlist.ini');
+//设置调用的服务ip
+//$client->setService('userservice');
+$client->setConfig([
+    'open_length_check' => true,
+    'package_max_length' => 2000000,
+    'package_length_type' => 'N',
+    'package_body_offset' => 12,
+    'package_length_offset' => 0,
+]);
+
+
+$call1 = $client->call('11', ['test1']);
+$call2 = $client->call('22', ['test2']);
+$call3 = $client->call('33', ['test3']);
+$client->resultData();
+var_dump($call1->data, $call2->data, $call3->data);
+
+$task_call = $client->task('11', ['test1']);
+var_dump($task_call->getTaskResult());
 ```
 
