@@ -72,7 +72,7 @@ daemonize = 0
 ```
 
 ###RPC/service/server/swoole.php RPC服务端
-> * ```$server->setServiceName(string)``` 用于多个服务同时运行时，作为服务的区分，同时也可以使客户端，更容易调用不同的服务  
+> * ```$server->setServiceName(string $name)``` 用于多个服务同时运行时，作为服务的区分，同时也可以使客户端，更容易调用不同的服务  
 > * ```doWork``` 方法, 服务器在接收信息 ```onReceive``` 回调中会调用 ```doWork``` 方法
 > * ```doTask``` 方法, 服务器在接收信息 ```onTask``` 回调中会调用 ```doTask``` 方法，并返回数据给 ```onFinish```
 
@@ -98,9 +98,9 @@ $server->run();
 ```
 
 ###RPC/service/config/swoole.ini 服务端配置参数
-1. ```server```  swoole 服务的ip，端口，运行模式
+1. ```server```   swoole 服务的ip，端口，运行模式
 2. ```monitor```  服务上报服务端的ip，端口，运行模式
-3. ```swoole```  swoole配置选项
+3. ```swoole```   swoole配置选项
 
 ```
 [server]
@@ -139,47 +139,16 @@ daemonize = 0
 
 ```
 
-----------
-
-#快速开始
-```
- composer install
-```
-##运行服务指令
-```
- start | stop | reload | restart | help
-```
-
-###运行服务监控
-> * 服务注册/发现，通过扫描redis获取到所有可用服务列表，并生成配置到指定路径
-```
- cd RPC/service/server
- php discovery.php start
-```
-
-###运行服务
-```
- cd RPC/service/server
- php swoole.php start
-```
-
-###客户端展示
-> * 需要配置服务发现生成的ip地址文件
-```
- cd RPC/service/client
- php swoole.php start
-```
-
-##使用方法
-
-###客户端(Client)
-
-0. call 下发任务
-1. task 下发task任务，适合用于处理逻辑时间长的业务，而不关心结果
+###RPC/client/client.php RPC客户端
+####SOA client 服务化客户端
+> * ```$client->setService(string $name)``` 设置需要调用的服务名称，会根据服务发现生成配置文件，连接到对应的服务端
+> * ```$client->setServiceList(serverlistpath)``` 需要配置服务发现服务端生成的服务列表文件地址
+> * ```$client->call(string $api, array $params, int $mode)``` 下发任务给服务端
+> * ```$client->task(string $api, array $params, int $mode)``` 下发任务给服务端，服务端使用 ```onTask``` 方式执行，用于处理一些逻辑时间长的任务，客户端可不关心执行结果
 
 ```
 $client = new \Swoole\Client\SOA();
-$client->setServiceList(PROJECT_ROOT . DS . 'client/config/serverlist.ini');
+$client->setServiceList('youpath/serverlist.ini');
 //设置调用的服务ip
 //$client->setService('userservice');
 $client->setConfig([
@@ -199,5 +168,50 @@ var_dump($call1->data, $call2->data, $call3->data);
 
 $task_call = $client->task('11', ['test1']);
 var_dump($task_call->getTaskResult());
+
+```
+
+####client 非服务化客户端
+```
+$client = new \Swoole\Client\Client();
+$client->connect(host, port);
+$result = $client->send(\Swoole\Packet\Format::packEncode([
+    'params'   => 'client test'
+]));
+var_dump($result);
+
+```
+
+----------
+
+#快速开始
+```
+ composer install
+```
+##运行服务指令
+```
+ start | stop | reload | restart | help
+```
+
+###运行服务监控
+> * 服务注册/发现，通过扫描redis获取到所有可用服务列表，并生成配置到指定路径
+
+```
+ cd RPC/monitor/server/
+ php discovery.php start
+```
+
+###运行服务
+```
+ cd RPC/service/server
+ php swoole.php start
+```
+
+###客户端
+> * 需要配置服务发现生成的ip地址文件
+
+```
+ cd RPC/service/client
+ php client.php
 ```
 
