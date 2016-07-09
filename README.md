@@ -77,6 +77,7 @@ daemonize = 0
 > * ```doTask``` 方法, 服务器在接收信息 ```onTask``` 回调中会调用 ```doTask``` 方法，并返回数据给 ```onFinish```
 
 ```
+<?php
 class DemoServer extends Server
 {
 
@@ -147,6 +148,7 @@ daemonize = 0
 > * ```$client->task(string $api, array $params, int $mode)``` 下发任务给服务端，服务端使用 ```onTask``` 方式执行，用于处理一些逻辑时间长的任务，客户端可不关心执行结果
 
 ```
+<?php
 $client = new \Swoole\Client\SOA();
 $client->setServiceList('youpath/serverlist.ini');
 //设置调用的服务ip
@@ -173,6 +175,7 @@ var_dump($task_call->getTaskResult());
 
 ####client 非服务化客户端
 ```
+<?php
 $client = new \Swoole\Client\Client();
 $client->connect(host, port);
 $result = $client->send(\Swoole\Packet\Format::packEncode([
