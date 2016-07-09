@@ -27,7 +27,7 @@ make && make install
 ###RPC/monitor/server/discovery.php 服务发现服务端
 > * 服务发现服务端，通过扫描Redis获取到各服务器上报的地址和端口，并生成配置到指定路径
 
-```
+```php
 $server = new \Swoole\Monitor\Discovery('monitorpath/config/monitor.ini');
 $server->run();
 ```
@@ -37,7 +37,7 @@ $server->run();
 2. ```server```    swoole 服务的ip，端口，运行模式
 3. ```swoole```    swoole 配置选项
 
-```
+```ini
 [redis]
 host = "127.0.0.1"
 ;端口
@@ -76,8 +76,7 @@ daemonize = 0
 > * ```doWork``` 方法, 服务器在接收信息 ```onReceive``` 回调中会调用 ```doWork``` 方法
 > * ```doTask``` 方法, 服务器在接收信息 ```onTask``` 回调中会调用 ```doTask``` 方法，并返回数据给 ```onFinish```
 
-```
-<?php
+```php
 class DemoServer extends Server
 {
 
@@ -103,7 +102,7 @@ $server->run();
 2. ```monitor```  服务上报服务端的ip，端口，运行模式
 3. ```swoole```   swoole配置选项
 
-```
+```ini
 [server]
 ;地址
 host = "0.0.0.0"
@@ -147,8 +146,7 @@ daemonize = 0
 > * ```$client->call(string $api, array $params, int $mode)``` 下发任务给服务端
 > * ```$client->task(string $api, array $params, int $mode)``` 下发任务给服务端，服务端使用 ```onTask``` 方式执行，用于处理一些逻辑时间长的任务，客户端可不关心执行结果
 
-```
-<?php
+```php
 $client = new \Swoole\Client\SOA();
 $client->setServiceList('youpath/serverlist.ini');
 //设置调用的服务ip
@@ -174,8 +172,7 @@ var_dump($task_call->getTaskResult());
 ```
 
 ####client 非服务化客户端
-```
-<?php
+```php
 $client = new \Swoole\Client\Client();
 $client->connect(host, port);
 $result = $client->send(\Swoole\Packet\Format::packEncode([
