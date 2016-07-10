@@ -92,7 +92,7 @@ class DemoServer extends Server
 }
 
 $server = new DemoServer('servicepath/config/swoole.ini');
-//$server->setServiceName('userService');
+$server->setServiceName('userService');
 $server->run();
 
 ```
@@ -149,8 +149,8 @@ daemonize = 0
 ```php
 $client = new \Swoole\Client\SOA();
 $client->setServiceList('youpath/serverlist.ini');
-//设置调用的服务ip
-//$client->setService('userservice');
+//设置调用的服务列表
+$client->setService('userservice');
 $client->setConfig([
     'open_length_check' => true,
     'package_max_length' => 2000000,
